@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Dashboard</h3>
+  <div class="d-flex align-items-center gap-2">
+    <div class="text-muted">Total Balance: <strong>₹ {{ '%.2f'|format(total_balance or 0) }}</strong></div>
+    <a class="btn btn-outline-secondary btn-sm" href="/pin/generate">Generate PIN</a>
+  </div>
+  </div>
+
+{% if top_alerts %}
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="card glass">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="card-title mb-0"><i class="bi bi-shield-exclamation text-danger me-2"></i>Risk Alerts</h5>
+          <span class="badge bg-danger-subtle text-danger">{{ top_alerts|length }}</span>
+        </div>
+        <ul class="list-group list-group-flush">
+          {% for a in top_alerts %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <span class="chip chip-danger"><i class="bi bi-exclamation-triangle"></i> {{ a.type }}</span>
+              <span class="ms-2">Acc #{{ a.acc_no }}</span>
+              <small class="text-muted ms-2">{{ a.time }}</small>
+            </div>
+            <div class="fw-semibold">₹ {{ '%.2f'|format(a.amount or 0) }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  </div>
+{% endif %}
+
+<div class="row g-3">
+  {% for a in accounts %}
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="card-title mb-1">Account #{{ a.acc_no }}</h5>
+            <div class="text-muted">{{ a.type }}</div>
+          </div>
+          <div class="fs-5">₹ {{ '%.2f'|format(a.balance or 0) }}</div>
+        </div>
+        <hr>
+        <form class="row g-2 align-items-end" action="/deposit" method="post">
+          <input type="hidden" name="acc" value="{{ a.acc_no }}">
+          <div class="col-6"><input class="form-control" name="amt" placeholder="Deposit Amount" required></div>
+          <div class="col-6"><button class="btn btn-success w-100">Deposit</button></div>
+        </form>
+        <form class="row g-2 align-items-end mt-2" action="/withdraw" method="post">
+          <input type="hidden" name="acc" value="{{ a.acc_no }}">
+          <div class="col-6"><input class="form-control" name="amt" placeholder="Withdraw Amount" required></div>
+          <div class="col-6"><button class="btn btn-warning w-100">Withdraw</button></div>
+        </form>
+        <div class="d-flex gap-2 mt-3">
+          <a class="btn btn-outline-secondary" href="/history/{{ a.acc_no }}">View History</a>
+          <a class="btn btn-outline-danger" href="/accounts/delete/{{ a.acc_no }}" onclick="return confirm('Close account #{{a.acc_no}}?')">Close</a>
+        </div>
+        {% if a.type == 'SAVINGS' %}
+        <div class="form-text mt-2">Interest may be credited at most once every 30 days.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row mt-4">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Transfer</h5>
+        <form id="transfer-form" class="row g-2" action="/transfer" method="post">
+          <div class="col-4">
+            <label class="form-label">From</label>
+            <select name="from" class="form-select">
+              {% for a in accounts %}<option value="{{a.acc_no}}">{{a.acc_no}}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-4">
+            <label class="form-label">To</label>
+            <input class="form-control" name="to" placeholder="Receiver Acc No" required>
+          </div>
+          <div class="col-4">
+            <label class="form-label">Amount</label>
+            <input class="form-control" name="amt" required>
+          </div>
+          <div class="col-12">
+            <div id="riskHint" class="small text-danger d-none"><i class="bi bi-exclamation-triangle me-1"></i>This transfer looks unusual based on your history.</div>
+          </div>
+          <input type="hidden" name="pin_confirm" id="pin_confirm">
+          <div class="col-12">
+            <button type="button" id="transfer-open" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#pinModal">Transfer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="card-title">Income vs Expense</h5>
+          <select id="chart-acc" class="form-select w-auto">
+            {% for a in accounts %}<option value="{{a.acc_no}}">{{a.acc_no}}</option>{% endfor %}
+          </select>
+        </div>
+        <canvas id="trend" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Confirm Modal -->
+<div class="modal fade" id="pinModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirm Transfer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Enter your 4-digit PIN</label>
+          <input type="password" id="pin-input" class="form-control" minlength="4" maxlength="4" pattern="[0-9]{4}" placeholder="••••" required>
+          <div class="form-text">This is required to authorize the transfer.</div>
+        </div>
+        <div id="riskModalWarn" class="alert alert-warning d-none"><i class="bi bi-exclamation-triangle me-1"></i>This transfer appears unusual. Please double-check the amount and destination.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="pin-confirm-btn" class="btn btn-primary">Confirm & Transfer</button>
+      </div>
+    </div>
+  </div>
+  </div>
+<script>
+let chart;
+async function loadChart(acc){
+  const res = await fetch(`/api/chart/${acc}`);
+  if(!res.ok) return;
+  const data = await res.json();
+  const ctx = document.getElementById('trend');
+  const ds = {
+    labels: data.labels,
+    datasets: [
+      {label: 'Income', data: data.income, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.2)', tension:.2},
+      {label: 'Expense', data: data.expense, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.2)', tension:.2}
+    ]
+  };
+  if(chart){ chart.destroy(); }
+  chart = new Chart(ctx, { type: 'line', data: ds, options: { responsive: true, plugins: { legend: { position: 'bottom' }}}});
+}
+const sel = document.getElementById('chart-acc');
+if(sel){
+  loadChart(sel.value);
+  sel.addEventListener('change', ()=> loadChart(sel.value));
+}
+// Transfer PIN modal wiring
+const pinBtn = document.getElementById('pin-confirm-btn');
+if(pinBtn){
+  pinBtn.addEventListener('click', ()=>{
+    const pin = (document.getElementById('pin-input').value||'').trim();
+    if(!/^\d{4}$/.test(pin)){
+      document.getElementById('pin-input').focus();
+      return;
+    }
+    document.getElementById('pin_confirm').value = pin;
+    const modal = bootstrap.Modal.getInstance(document.getElementById('pinModal'));
+    if(modal){ modal.hide(); }
+    document.getElementById('transfer-form').submit();
+  });
+}
+
+// Risk pre-check for transfer
+const tf = document.getElementById('transfer-form');
+const amtInput = tf ? tf.querySelector('input[name="amt"]') : null;
+const toInput = tf ? tf.querySelector('input[name="to"]') : null;
+const fromSelect = tf ? tf.querySelector('select[name="from"]') : null;
+const riskHint = document.getElementById('riskHint');
+const openBtn = document.getElementById('transfer-open');
+let lastRisk = {high:false, score:0};
+
+function setRisk(high){
+  if(riskHint){ riskHint.classList.toggle('d-none', !high); }
+  if(openBtn){
+    openBtn.classList.toggle('btn-danger', high);
+    openBtn.classList.toggle('btn-primary', !high);
+  }
+}
+async function checkRisk(){
+  if(!fromSelect || !amtInput) return;
+  const from = fromSelect.value;
+  const to = (toInput && toInput.value) ? toInput.value.trim() : '';
+  const amt = parseFloat(amtInput.value||'0');
+  if(!from || !amt || amt<=0){ setRisk(false); return; }
+  try{
+    const q = new URLSearchParams({ from, to, amt });
+    const res = await fetch(`/api/risk/transfer?${q.toString()}`);
+    if(!res.ok){ setRisk(false); return; }
+    const data = await res.json();
+    lastRisk = data || {high:false, score:0};
+    setRisk(!!lastRisk.high);
+  }catch(e){ setRisk(false); }
+}
+[fromSelect, toInput, amtInput].forEach(el => el && el.addEventListener('input', checkRisk));
+document.addEventListener('DOMContentLoaded', checkRisk);
+
+const pinModalEl = document.getElementById('pinModal');
+if(pinModalEl){
+  pinModalEl.addEventListener('show.bs.modal', ()=>{
+    const warn = document.getElementById('riskModalWarn');
+    if(warn){ warn.classList.toggle('d-none', !(lastRisk && lastRisk.high)); }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0">Transactions for Account #{{ acc }}</h3>
+  <div class="d-flex gap-2">
+    <a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    <button class="btn btn-outline-primary" id="btn-pdf">Download PDF</button>
+  </div>
+</div>
+<div class="mb-2 text-muted">Type: <strong>{{ account.type }}</strong> | Current Balance: <strong>₹ {{ '%.2f'|format(account.balance or 0) }}</strong></div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="row mb-3 g-2">
+      <div class="col-sm-4">
+        <input id="filterText" class="form-control" placeholder="Search by type (e.g., DEPOSIT, WITHDRAW)">
+      </div>
+      <div class="col-sm-4">
+        <input id="filterMonth" class="form-control" placeholder="Filter by month (YYYY-MM)">
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table id="txnTable" class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th class="text-end">Amount</th>
+            <th>Date</th>
+            <th>Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in txns %}
+          <tr class="{% if suspicious_ids and t.id in suspicious_ids %}table-danger{% endif %}">
+            <td>{{ t.id }}</td>
+            <td><span class="badge bg-light text-dark">{{ t.type }}</span></td>
+            <td class="text-end">₹ {{ '%.2f'|format(t.amount or 0) }}</td>
+            <td>{{ (t.time or '') }}</td>
+            <td>
+              {% if suspicious_ids and t.id in suspicious_ids %}
+                <span class="chip chip-danger" title="This transaction looks unusual"><i class="bi bi-exclamation-triangle"></i> Suspicious</span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <canvas id="summary" height="110"></canvas>
+  </div>
+</div>
+
+<script>
+// Simple table filters
+const filterText = document.getElementById('filterText');
+const filterMonth = document.getElementById('filterMonth');
+function applyFilters(){
+  const q = (filterText.value||'').toLowerCase();
+  const m = (filterMonth.value||'').trim();
+  document.querySelectorAll('#txnTable tbody tr').forEach(tr =>{
+    const type = tr.children[1].innerText.toLowerCase();
+    const date = tr.children[3].innerText.substring(0,7);
+    const okText = !q || type.includes(q);
+    const okMonth = !m || date === m;
+    tr.style.display = (okText && okMonth) ? '' : 'none';
+  });
+}
+[filterText, filterMonth].forEach(inp => inp && inp.addEventListener('input', applyFilters));
+
+// PDF export
+const pdfBtn = document.getElementById('btn-pdf');
+if(pdfBtn){
+  pdfBtn.addEventListener('click', () => {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(`Statement - Account #{{ acc }}`, 14, 16);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
+    doc.autoTable({ html: '#txnTable', startY: 28, styles: { halign: 'left' }, columnStyles: { 2: { halign: 'right' }}});
+    doc.save(`statement_{{ acc }}.pdf`);
+  });
+}
+
+// Summary chart
+(function(){
+  const rows = Array.from(document.querySelectorAll('#txnTable tbody tr'));
+  let income = 0, expense = 0;
+  rows.forEach(r =>{
+    const type = r.children[1].innerText;
+    const amount = parseFloat((r.children[2].innerText||'').replace(/[^0-9.-]/g,'')) || 0;
+    if(['DEPOSIT','TRANSFER_IN','INTEREST'].includes(type)) income += amount; else if(['WITHDRAW','TRANSFER_OUT'].includes(type)) expense += amount;
+  });
+  const ctx = document.getElementById('summary');
+  new Chart(ctx, { type:'bar', data:{ labels:['Income','Expense'], datasets:[{ label:'₹', data:[income, expense], backgroundColor:['#198754','#dc3545'] }] }, options:{ plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true }}}});
+})();
+</script>
+{% endblock %}
