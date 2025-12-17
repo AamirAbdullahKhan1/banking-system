@@ -1,3 +1,4 @@
+#All the required packages for running the banking application
 from flask import Flask, render_template, request, redirect, session
 from flask import url_for, flash, jsonify
 import os
@@ -9,9 +10,11 @@ from dotenv import load_dotenv
 import numpy as np
 from sklearn.ensemble import IsolationForest
 
+#API Section to connect with the DB
 app = Flask(__name__)
 app.secret_key = "bank_secret"
 
+#Loading the API key using env (i.e Neon.tech DB)
 load_dotenv()
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///bank.db")
 if DATABASE_URL.startswith("postgresql") and "sslmode" not in DATABASE_URL:
@@ -21,6 +24,8 @@ engine = create_engine(DATABASE_URL, echo=False, future=True)
 Base = declarative_base()
 SessionLocal = scoped_session(sessionmaker(bind=engine, autoflush=False, autocommit=False))
 
+#The User class that takes in their ID, name and etc..
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -28,6 +33,7 @@ class User(Base):
     pin = Column(String, nullable=False)
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
 
+#The account class that takes in the required details
 class Account(Base):
     __tablename__ = "accounts"
     acc_no = Column(Integer, primary_key=True)
@@ -38,6 +44,7 @@ class Account(Base):
     user = relationship("User", back_populates="accounts")
     transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
 
+#The transaction class to handle the transactions smoothly
 class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, autoincrement=True)
