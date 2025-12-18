@@ -12,7 +12,7 @@ from sklearn.ensemble import IsolationForest
 
 #API Section to connect with the DB
 app = Flask(__name__)
-app.secret_key = "bank_secret"
+app.secret_key = os.environ.get("SECRET_KEY", "dev_only_change_me")
 
 #Loading the API key using env (i.e Neon.tech DB)
 load_dotenv()
@@ -215,6 +215,8 @@ def init_db():
             dbs.commit()
     finally:
         dbs.close()
+    
+init_db()
 
 # ================= LOGIN =================
 @app.route("/", methods=["GET","POST"])
